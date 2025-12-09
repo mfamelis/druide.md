@@ -111,17 +111,33 @@ function syncKnowledgeBase() {
     lastMarkdown = markdown;
 
     // 1. Parse Definitions
-    // Pattern: [^unc-ID]: <!-- druide:TYPE:id=ID druide:TYPE:description="DESC" druide:TYPE:anchor="ANCHOR" -->
+    // Pattern: [^unc-ID]: <!-- druide:TYPE:id=ID ... -->
+    // We use a broader regex to capture the whole comment, then extract attributes.
     const defMap = {};
-    const defRegex = /\[\^unc-([a-zA-Z0-9-]+)\]:\s*<!--\s*druide:([a-z]+):id=\1(?:\s+druide:\2:description="([^"]*)")?(?:\s+druide:\2:anchor="([^"]*)")?\s*-->/g;
+    const defRegex = /\[\^unc-([a-zA-Z0-9-]+)\]:\s*<!--\s*druide:([a-z]+):id=\1([\s\S]*?)-->/g;
 
     let defMatch;
     while ((defMatch = defRegex.exec(markdown)) !== null) {
         const id = defMatch[1];
         const type = defMatch[2];
-        const description = defMatch[3] || "Unknown";
-        const anchor = defMatch[4] || null; // Capture anchor if present
-        defMap[id] = { type, description, anchor };
+        const rest = defMatch[3];
+
+        // Extract attributes from 'rest'
+        // Use [\s\S]*? for non-greedy match across newlines
+        const descMatch = rest.match(new RegExp(`druide:${type}:description="([\\s\\S]*?)"`));
+        const description = descMatch ? descMatch[1] : "Unknown";
+
+        const anchorMatch = rest.match(new RegExp(`druide:${type}:anchor="([\\s\\S]*?)"`));
+        const anchor = anchorMatch ? anchorMatch[1] : null;
+
+        // Parse Linked Items
+        let linked = [];
+        const linkedMatch = rest.match(new RegExp(`druide:${type}:linked="([^"]*)"`));
+        if (linkedMatch && linkedMatch[1]) {
+            linked = linkedMatch[1].split(',').filter(s => s.trim().length > 0);
+        }
+
+        defMap[id] = { type, description, anchor, linked };
     }
 
     // 2. Scan markers
@@ -172,7 +188,8 @@ function syncKnowledgeBase() {
             knowledgeBase[id] = {
                 id,
                 resolved: false,
-                question: ''
+                question: '',
+                linked: []
             };
         }
 
@@ -182,12 +199,14 @@ function syncKnowledgeBase() {
         if (defMap[id]) {
             knowledgeBase[id].type = defMap[id].type;
             knowledgeBase[id].description = defMap[id].description;
+            knowledgeBase[id].linked = defMap[id].linked || [];
             if (defMap[id].type === 'decision') {
                 knowledgeBase[id].question = defMap[id].description;
             }
         } else if (!knowledgeBase[id].type) {
             knowledgeBase[id].type = 'uncertainty';
             knowledgeBase[id].description = 'Unknown';
+            knowledgeBase[id].linked = [];
         }
     }
 
@@ -474,6 +493,13 @@ function openModal(type, id = null) {
     }
 
     modalOverlay.classList.remove('hidden');
+
+    // Reset to Step 1
+    currentCreationStep = 1;
+    document.getElementById('modal-step-1').classList.remove('hidden');
+    document.getElementById('modal-step-2').classList.add('hidden');
+    btnSave.textContent = editingId ? "Save" : "Next";
+
     modalInput.focus();
 }
 
@@ -483,10 +509,87 @@ function closeModal() {
     tempSelection = null;
 }
 
+// Variables for Step 2
+let currentCreationStep = 1;
+
 function setupModalActions() {
     btnCancel.addEventListener('click', closeModal);
     btnCloseModal.addEventListener('click', closeModal);
-    btnSave.addEventListener('click', saveAnnotation);
+    btnSave.addEventListener('click', handleModalAction);
+}
+
+function handleModalAction() {
+    if (editingId) {
+        saveAnnotation(); // Direct save for editing
+    } else {
+        if (currentCreationStep === 1) {
+            goToStep2();
+        } else {
+            saveAnnotation();
+        }
+    }
+}
+
+function goToStep2() {
+    const description = modalInput.value.trim();
+    if (!description) return;
+
+    // Check if there are candidates to link
+    const type = tempSelection.type;
+    const targetType = type === 'uncertainty' ? 'decision' : 'uncertainty';
+
+    // Find candidates (all items of targetType)
+    const candidates = Object.values(knowledgeBase).filter(item => item.type === targetType);
+
+    // Sort by recent? (ID is random, but we can assume order in object or file order... 
+    // KB is object. Object.values order is indeterminate but usually insertion order)
+    // Let's just use them as is.
+
+    if (candidates.length === 0) {
+        // No candidates, skip to save
+        saveAnnotation();
+        return;
+    }
+
+    // Show Step 2
+    currentCreationStep = 2;
+    document.getElementById('modal-step-1').classList.add('hidden');
+    document.getElementById('modal-step-2').classList.remove('hidden');
+    document.getElementById('modal-step-2-instruction').textContent = `Link this ${type} to existing ${targetType === 'decision' ? 'Decisions' : 'Uncertainties'}?`;
+    btnSave.textContent = "Save";
+
+    const listContainer = document.getElementById('modal-link-list');
+    listContainer.innerHTML = '';
+
+    candidates.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'link-selection-item';
+        div.innerHTML = `
+            <input type="checkbox" value="${item.id}">
+            <span>${item.description || "No description"}</span>
+        `;
+        div.onclick = (e) => {
+            if (e.target.tagName !== 'INPUT') {
+                const cb = div.querySelector('input');
+                cb.checked = !cb.checked;
+            }
+            // Logic to uncheck "None" if an item is selected
+            const noneCb = document.getElementById('modal-no-link');
+            const anyChecked = Array.from(listContainer.querySelectorAll('input')).some(c => c.checked);
+            if (anyChecked) noneCb.checked = false;
+            else noneCb.checked = true;
+        };
+        listContainer.appendChild(div);
+    });
+
+    // None Checkbox Logic
+    const noneCb = document.getElementById('modal-no-link');
+    noneCb.checked = true;
+    noneCb.onchange = () => {
+        if (noneCb.checked) {
+            listContainer.querySelectorAll('input').forEach(c => c.checked = false);
+        }
+    };
 }
 
 function saveAnnotation() {
@@ -518,11 +621,13 @@ function saveAnnotation() {
         const match = md.match(defRegex);
         if (match) {
             let anchorVal = "";
-            const anchorMatch = match[0].match(/druide:\w+:anchor="([^"]*)"/);
+            const anchorMatch = match[0].match(/druide:\w+:anchor="([\s\S]*?)"/);
             if (anchorMatch) anchorVal = anchorMatch[1];
 
             // Rebuild
-            const newDef = `[^unc-${id}]: <!-- druide:${item.type}:id=${id} druide:${item.type}:description="${safeDesc}" druide:${item.type}:anchor="${anchorVal}" -->`;
+            const linkedArr = item.linked || [];
+            const linkedVal = linkedArr.join(',');
+            const newDef = `[^unc-${id}]: <!-- druide:${item.type}:id=${id} druide:${item.type}:description="${safeDesc}" druide:${item.type}:anchor="${anchorVal}" druide:${item.type}:linked="${linkedVal}" -->`;
 
             md = md.replace(defRegex, newDef);
             editorEdit.value = md;
@@ -543,13 +648,45 @@ function saveAnnotation() {
         const safeDesc = description.replace(/"/g, '&quot;');
         const safeAnchor = text.replace(/"/g, '&quot;');
 
-        const definition = `\n[^unc-${id}]: <!-- druide:${type}:id=${id} druide:${type}:description="${safeDesc}" druide:${type}:anchor="${safeAnchor}" -->`;
+        // Collect Links from Step 2
+        let linkedIds = [];
+        if (currentCreationStep === 2) {
+            const listContainer = document.getElementById('modal-link-list');
+            listContainer.querySelectorAll('input:checked').forEach(cb => {
+                linkedIds.push(cb.value);
+            });
+        }
+        const linkedVal = linkedIds.join(',');
+
+        const definition = `\n[^unc-${id}]: <!-- druide:${type}:id=${id} druide:${type}:description="${safeDesc}" druide:${type}:anchor="${safeAnchor}" druide:${type}:linked="${linkedVal}" -->`;
 
         const val = editorEdit.value;
         const before = val.substring(0, end);
         const after = val.substring(end);
 
         editorEdit.value = before + marker + after + definition;
+
+        // Update the OTHER side of the links
+        // We must update the definitions of the items we just linked TO, to include this new ID
+        // Since we haven't synced KB yet, we rely on current 'knowledgeBase' state for those items
+        // But we need to write to 'editorEdit.value'.
+        // We can do this serially.
+
+        // BUT: 'editorEdit.value' has just changed. We should sync first? 
+        // Or update the text again.
+
+        // Let's allow syncKnowledgeBase() to run normally first to pick up the new item?
+        // No, we need to update the file content for the OTHER items too.
+
+        linkedIds.forEach(targetId => {
+            const targetItem = knowledgeBase[targetId];
+            if (targetItem) {
+                if (!targetItem.linked.includes(id)) {
+                    targetItem.linked.push(id);
+                    updateDefinitionInMarkdown(targetId); // This reads/writes editorEdit.value
+                }
+            }
+        });
     }
 
     closeModal();
@@ -599,11 +736,120 @@ function renderSidebar() {
             </div>
             <div class="card-body">${item.description}</div>
             <div class="card-snippet">"${item.text}"</div>
+            
+            <div class="card-links-section">
+                <div class="card-links-header" onclick="toggleLinks('${id}', event)">
+                    <span class="material-symbols-rounded" id="icon-links-${id}" style="font-size: 1.2em;">arrow_right</span>
+                    Related ${item.type === 'uncertainty' ? 'Decisions' : 'Uncertainties'} (${item.linked ? item.linked.length : 0})
+                </div>
+                <div class="card-links-body hidden" id="links-body-${id}">
+                    ${renderLinkedItems(id)}
+                    <button class="btn-add-link" onclick="openAddLinkPopover(event, '${id}')">
+                         <span class="material-symbols-rounded" style="font-size: 1.1em;">add</span> Add link
+                    </button>
+                </div>
+            </div>
         `;
 
-        card.onclick = () => highlightSidebarItem(id);
+        card.onclick = (e) => {
+            // Prevent Card click if clicking interactive elements
+            if (e.target.closest('.card-links-section') || e.target.closest('.card-actions')) return;
+            highlightSidebarItem(id);
+        };
         sidebarList.appendChild(card);
     });
+}
+
+function renderLinkedItems(id) {
+    const item = knowledgeBase[id];
+    if (!item.linked || item.linked.length === 0) return '';
+
+    return item.linked.map(linkedId => {
+        const linkedItem = knowledgeBase[linkedId];
+        if (!linkedItem) return ''; // Should not happen if sync is correct
+
+        return `
+            <div class="card-linked-item">
+                <span class="linked-item-text" onclick="handleLinkClick('${linkedId}', event)" title="${linkedItem.description}">
+                    ${linkedItem.description}
+                </span>
+                <span class="btn-unlink" onclick="unlinkUncertaintyFromDecision('${id}', '${linkedId}'); event.stopPropagation();" title="Unlink">
+                    <span class="material-symbols-rounded" style="font-size: 1.1em;">link_off</span>
+                </span>
+            </div>
+        `;
+    }).join('');
+}
+
+window.toggleLinks = function (id, e) {
+    if (e) e.stopPropagation();
+    const body = document.getElementById(`links-body-${id}`);
+    const icon = document.getElementById(`icon-links-${id}`);
+
+    if (body.classList.contains('hidden')) {
+        body.classList.remove('hidden');
+        icon.textContent = 'arrow_drop_down';
+    } else {
+        body.classList.add('hidden');
+        icon.textContent = 'arrow_right';
+    }
+}
+
+window.handleLinkClick = function (id, e) {
+    if (e) e.stopPropagation();
+    highlightSidebarItem(id);
+}
+
+window.openAddLinkPopover = function (e, id) {
+    e.stopPropagation();
+
+    // Remove existing popovers
+    document.querySelectorAll('.popover-add-link').forEach(el => el.remove());
+
+    const item = knowledgeBase[id];
+    const targetType = item.type === 'uncertainty' ? 'decision' : 'uncertainty';
+
+    // Candidates: All of targetType NOT already linked
+    const candidates = Object.values(knowledgeBase).filter(c =>
+        c.type === targetType && (!item.linked || !item.linked.includes(c.id))
+    );
+
+    if (candidates.length === 0) {
+        alert("No available items to link.");
+        return;
+    }
+
+    const popover = document.createElement('div');
+    popover.className = 'popover-add-link';
+
+    candidates.forEach(cand => {
+        const div = document.createElement('div');
+        div.className = 'popover-item';
+        div.textContent = cand.description || "No description";
+        div.onclick = (ev) => {
+            ev.stopPropagation();
+            linkUncertaintyToDecision(id, cand.id);
+            popover.remove();
+        };
+        popover.appendChild(div);
+    });
+
+    document.body.appendChild(popover);
+
+    // Position
+    const rect = e.target.getBoundingClientRect();
+    popover.style.top = `${rect.bottom + window.scrollY + 5}px`;
+    popover.style.left = `${rect.left + window.scrollX}px`;
+
+    // Close on click outside
+    const closeListener = (ev) => {
+        if (!popover.contains(ev.target)) {
+            popover.remove();
+            document.removeEventListener('click', closeListener);
+        }
+    };
+    // Defer to avoid immediate trigger
+    setTimeout(() => document.addEventListener('click', closeListener), 0);
 }
 
 window.editItem = function (id, e) {
@@ -681,6 +927,62 @@ function highlightSidebarItem(id) {
             span.classList.add('active');
             span.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
+    }
+}
+
+// --- Linking Logic ---
+
+function linkUncertaintyToDecision(uId, dId) {
+    // 1. Update In-Memory
+    const uItem = knowledgeBase[uId];
+    const dItem = knowledgeBase[dId];
+
+    if (!uItem || !dItem) return;
+    if (!uItem.linked.includes(dId)) uItem.linked.push(dId);
+    if (!dItem.linked.includes(uId)) dItem.linked.push(uId);
+
+    // 2. Persist to Markdown (Update both definitions)
+    updateDefinitionInMarkdown(uId);
+    updateDefinitionInMarkdown(dId);
+
+    // 3. Re-render
+    syncKnowledgeBase(); // To ensure consistency
+}
+
+function unlinkUncertaintyFromDecision(uId, dId) {
+    const uItem = knowledgeBase[uId];
+    const dItem = knowledgeBase[dId];
+
+    if (!uItem || !dItem) return;
+    uItem.linked = uItem.linked.filter(id => id !== dId);
+    dItem.linked = dItem.linked.filter(id => id !== uId);
+
+    updateDefinitionInMarkdown(uId);
+    updateDefinitionInMarkdown(dId);
+
+    syncKnowledgeBase();
+}
+
+function updateDefinitionInMarkdown(id) {
+    const item = knowledgeBase[id];
+    let md = editorEdit.value;
+
+    const defRegex = new RegExp(`(\\[\\^unc-${id}\\]:\\s*<!--\\s*druide:${item.type}:id=${id}[\\s\\S]*?)-->`);
+    const match = md.match(defRegex);
+
+    if (match) {
+        let anchorVal = "";
+        const anchorMatch = match[0].match(/druide:\w+:anchor="([\s\S]*?)"/);
+        if (anchorMatch) anchorVal = anchorMatch[1];
+
+        const description = item.description;
+        const safeDesc = description.replace(/"/g, '&quot;');
+        const linkedVal = item.linked.join(',');
+
+        const newDef = `[^unc-${id}]: <!-- druide:${item.type}:id=${id} druide:${item.type}:description="${safeDesc}" druide:${item.type}:anchor="${anchorVal}" druide:${item.type}:linked="${linkedVal}" -->`;
+
+        md = md.replace(defRegex, newDef);
+        editorEdit.value = md;
     }
 }
 

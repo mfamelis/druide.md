@@ -391,4 +391,215 @@ Here is the JSON:
   }
 }
 ```
+## 12. Linking uncertainties and decisions
 
+### **Antigravity Prompt: Add Linking Between Uncertainties and Decisions**
+
+**Goal:** Extend the existing Uncertainty Notebook prototype with first-class linking between *Uncertainty* objects (U) and *Decision* objects (D). Use two UX patterns:
+
+1. **Inline linking popup during creation** (Option 3)
+2. **Link panels in sidebar items** (Option 1)
+
+Keep the code minimal, readable, and declarative. Don’t introduce unnecessary DRUIDE concepts—just the ability to relate Us ↔ Ds with many-to-many cardinality.
+
+---
+
+#### **Data Model Changes**
+
+Extend the internal JSON structures:
+
+```ts
+type Uncertainty = {
+  id: string;
+  description: string;
+  text: string;
+  range: { start: number; end: number };
+  linkedDecisions: string[];  // list of decision IDs
+}
+
+type Decision = {
+  id: string;
+  question: string;
+  text: string;
+  range: { start: number; end: number };
+  linkedUncertainties: string[]; // list of uncertainty IDs
+}
+```
+
+Store these in the same global notebook state as before.
+
+Utility functions required:
+
+```ts
+linkUncertaintyToDecision(Uid, Did)
+unlinkUncertaintyFromDecision(Uid, Did)
+```
+
+---
+
+#### **Feature 1: Inline Linking Popup (creation-time linking)**
+
+##### Behavior:
+
+When a user highlights text and clicks *Create Uncertainty* or *Create Decision*:
+
+1. Show the existing modal where the user can edit the extracted text.
+2. Add a second step in the modal:
+
+For **new Decisions**:
+
+```
+Link this decision to an existing Uncertainty?
+[Dropdown of uncertainties sorted by recency]
+[ ] None
+```
+
+For **new Uncertainties**:
+
+```
+Link this uncertainty to existing Decisions?
+[Multiselect of decisions]
+[ ] None
+```
+
+3. Selected links are persisted using the above linking functions.
+
+##### Notes:
+
+* Use a simple `<select>` or `<ul>` with clickable rows.
+* No need for fuzzy search yet.
+* If no uncertainties/decisions exist, skip this step silently.
+
+---
+
+#### **Feature 2: Link Panels in Sidebar Items**
+
+##### For each Uncertainty card:
+
+Add a collapsible section:
+
+**Related Decisions**
+
+```
+• [Decision label]  (click → scroll to text)
+  [unlink icon]
++ Add decision link
+```
+
+Clicking **+ Add decision link** opens a small popover with a list of decisions that are *not yet linked*:
+
+```
+Link to a decision:
+[ ] Decision A
+[ ] Decision B
+[Confirm]
+```
+
+##### For each Decision card:
+
+Mirror the same UI:
+
+**Related Uncertainties**
+
+```
+• [Uncertainty label]
+  [unlink icon]
++ Add uncertainty link
+```
+
+##### Behavior details:
+
+* Clicking on an item in the list scrolls the notebook to that text range and highlights it briefly.
+* Link/unlink operations update both sides (U and D).
+
+---
+
+#### **UI Implementation Notes**
+
+* Keep sidebar layout unchanged; the link panel appears *under* the main content of the card.
+* Use minimal CSS: a collapsible region with a chevron icon (▶ ▼).
+* Use small icons for link/unlink (e.g., chain-link and broken-chain, or + / ×).
+* Keep DOM structure simple—no fancy animations required.
+
+---
+
+#### **Minimal Acceptance Tests**
+
+1. Creating a Decision should allow linking to an existing Uncertainty.
+2. Creating an Uncertainty should allow linking to existing Decisions.
+3. The sidebar must display linked items with clickable navigation.
+4. Unlink must remove the relation from both U and D.
+5. Re-opened notebook should preserve all link relationships.
+
+---
+
+#### **Tech Choices**
+
+* Use your current stack (HTML + CSS + JS or lightweight framework).
+* No backend; all state remains in memory unless persistence already exists.
+* Reuse existing modal and sidebar components; extend rather than rewrite.
+
+---
+
+**Produce the updated code files (HTML, JS, CSS) implementing these features.**
+The implementation should be clean, modular, and easy to extend with additional DRUIDE semantics later.
+
+
+## 13. Debugging the addition of the linking feature
+
+There are some bugs. I started with this text:
+
+```
+This project has huge potential.
+I wonder if we should prioritize performance[^unc-demo1] or features.
+
+- Item 1
+- Item 2
+
+[^unc-demo1]: <!-- druide:uncertainty:id=demo1 -->
+```
+
+And I added a decision over the two items ("Item 1\n- Item 2"). The tool however did this:
+```
+This project has huge potential.
+I wonder if we should prioritize performance[^unc-demo1] or features.
+
+- Item 1
+- Item 2[^unc-s5xgpk]
+
+[^unc-demo1]: <!-- druide:uncertainty:id=demo1 druide:uncertainty:description="Unknown" druide:uncertainty:anchor="" druide:uncertainty:linked="s5xgpk" -->
+[^unc-s5xgpk]: <!-- druide:decision:id=s5xgpk druide:decision:description="which one?" druide:decision:anchor="Item 1
+- Item 2" druide:decision:linked="demo1" -->
+```
+
+With this JSON:
+```
+{
+  "demo1": {
+    "id": "demo1",
+    "resolved": false,
+    "question": "",
+    "text": "performance",
+    "range": {
+      "start": 66,
+      "end": 77
+    },
+    "type": "uncertainty",
+    "description": "Unknown"
+  },
+  "s5xgpk": {
+    "id": "s5xgpk",
+    "resolved": false,
+    "question": "which one?",
+    "text": "Item 1\n- Item 2",
+    "range": {
+      "start": 106,
+      "end": 121
+    },
+    "type": "decision",
+    "description": "hello"
+  }
+}
+```
+
+And the Reader view, identifies this decision as an uncertainty.

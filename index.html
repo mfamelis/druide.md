@@ -87,19 +87,34 @@
                         class="material-symbols-rounded">close</span></button>
             </header>
             <div class="modal-body">
-                <div class="form-group">
-                    <label for="modal-input-text" id="modal-label-text">Description</label>
-                    <textarea id="modal-input-text" rows="3" placeholder="Describe the uncertainty..."></textarea>
+                <div id="modal-step-1">
+                    <div class="form-group">
+                        <label for="modal-input-text" id="modal-label-text">Description</label>
+                        <textarea id="modal-input-text" rows="3" placeholder="Describe the uncertainty..."></textarea>
+                    </div>
+                    <!-- Context/Snippet preview could go here -->
+                    <div class="snippet-preview">
+                        <span class="label-xs">Referencing:</span>
+                        <blockquote id="modal-snippet">"Selected text..."</blockquote>
+                    </div>
                 </div>
-                <!-- Context/Snippet preview could go here -->
-                <div class="snippet-preview">
-                    <span class="label-xs">Referencing:</span>
-                    <blockquote id="modal-snippet">"Selected text..."</blockquote>
+
+                <div id="modal-step-2" class="hidden">
+                    <p class="step-instruction" id="modal-step-2-instruction">Select items to link:</p>
+                    <div id="modal-link-list" class="link-selection-list">
+                        <!-- Items injected here -->
+                    </div>
+                    <div class="no-link-option">
+                        <label>
+                            <input type="checkbox" id="modal-no-link" checked>
+                            Skipped / None
+                        </label>
+                    </div>
                 </div>
             </div>
             <footer class="modal-footer">
                 <button id="btn-cancel" class="btn-secondary">Cancel</button>
-                <button id="btn-save" class="btn-primary">Save</button>
+                <button id="btn-save" class="btn-primary">Next</button>
             </footer>
         </div>
     </div>

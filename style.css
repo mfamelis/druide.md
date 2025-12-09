@@ -609,3 +609,174 @@ blockquote {
 .hidden {
     display: none !important;
 }
+
+/* Modal Step 2 - Linking */
+.link-selection-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    background: #FAFAFA;
+}
+
+.link-selection-item {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    transition: background 0.1s;
+    font-size: 0.9rem;
+}
+
+.link-selection-item:last-child {
+    border-bottom: none;
+}
+
+.link-selection-item:hover {
+    background: #FFF;
+}
+
+.link-selection-item.selected {
+    background: var(--bg-decision-light);
+    /* Default blue-ish */
+}
+
+.link-selection-item input {
+    cursor: pointer;
+}
+
+.step-instruction {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.75rem;
+}
+
+.no-link-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.no-link-option label {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Sidebar Links */
+.card-links-section {
+    margin-top: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border-light);
+}
+
+.card-links-header {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0.5rem;
+}
+
+.card-links-header:hover {
+    color: var(--text-primary);
+}
+
+.card-links-body.hidden {
+    display: none;
+}
+
+.card-linked-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 0.25rem 0.5rem;
+    background: #F3F4F6;
+    border-radius: 4px;
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+    transition: background 0.1s;
+}
+
+.card-linked-item:hover {
+    background: #E5E7EB;
+}
+
+.linked-item-text {
+    flex: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 0.5rem;
+}
+
+.btn-unlink {
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+}
+
+.btn-unlink:hover {
+    color: #EF4444;
+}
+
+.btn-add-link {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--primary);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    padding: 0.25rem 0;
+    margin-top: 0.25rem;
+}
+
+.btn-add-link:hover {
+    text-decoration: underline;
+}
+
+/* Add Link Popover */
+.popover-add-link {
+    position: absolute;
+    background: var(--bg-app);
+    border: 1px solid var(--border-light);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    width: 200px;
+    z-index: 200;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.popover-item {
+    padding: 0.4rem 0.6rem;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.popover-item:hover {
+    background: var(--bg-surface);
+    color: var(--primary);
+}
